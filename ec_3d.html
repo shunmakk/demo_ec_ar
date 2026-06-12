@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>REMO-DESK | 企業向けリモートワークデスクセットEC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <!-- Three.js の読み込み -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3b82f6',
+                        secondary: '#10b981',
+                        dark: '#1e293b'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif; }
+        
+        .modal-enter { opacity: 0; transform: scale(0.95); transition: opacity 300ms, transform 300ms; }
+        .modal-enter-active { opacity: 1; transform: scale(1); }
+
+        .draggable-item { cursor: grab; transition: transform 0.2s, box-shadow 0.2s; }
+        .draggable-item:active { cursor: grabbing; transform: scale(1.02); }
+
+        /* 3Dキャンバスのコンテナ */
+        #virtual-desk-area {
+            position: relative;
+            overflow: hidden;
+            background-color: #f8fafc;
+            cursor: move; /* カメラ操作用のカーソル */
+        }
+        
+        /* Three.js のキャンバス */
+        #virtual-desk-area canvas {
+            display: block;
+            width: 100% !important;
+            height: 100% !important;
+            outline: none;
+        }
+        
+        /* 3DエリアのオーバーレイUI */
+        .canvas-overlay {
+            position: absolute;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        .real-image { object-fit: cover; width: 100%; height: 100%; border-radius: inherit; }
+        
+        #toast {
+            display: none;
+            min-width: 250px;
+            background-color: #333;
+            color: #fff;
+            text-align: center;
+            border-radius: 8px;
+            padding: 16px;
+            position: fixed;
+            z-index: 100;
+            left: 50%;
+            bottom: 30px;
+            transform: translateX(-50%);
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+
+    <!-- Header -->
+    <header class="bg-white shadow-sm sticky top-0 z-40">
+        <div class="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <div class="bg-primary text-white p-2 rounded-lg">
+                    <i data-lucide="monitor-smartphone" class="h-6 w-6"></i>
+                </div>
+                <h1 class="text-xl font-bold text-gray-900 tracking-tight">REMO-DESK <span class="text-xs font-normal text-gray-500 hidden sm:inline ml-2">企業向けリモートワーク環境構築</span></h1>
+            </div>
+            <div class="flex items-center gap-4">
+                <div class="hidden md:flex flex-col text-right">
+                    <span class="text-xs text-gray-500">ログイン中: 株式会社テクノロジーズ</span>
+                    <span class="text-sm font-semibold text-gray-900">従業員ID: EMP-0012</span>
+                </div>
+                <div class="relative">
+                    <button class="text-gray-600 hover:text-primary transition">
+                        <i data-lucide="shopping-cart" class="h-6 w-6"></i>
+                    </button>
+                    <span id="cart-badge" class="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full hidden">0</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-6xl mx-auto px-4 py-8">
+        
+        <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 md:p-6 mb-8 flex flex-col md:flex-row items-center justify-between">
+            <div class="flex items-start gap-4 mb-4 md:mb-0">
+                <div class="bg-blue-100 p-3 rounded-full text-primary shrink-0">
+                    <i data-lucide="building" class="h-6 w-6"></i>
+                </div>
+                <div>
+                    <h2 class="text-lg font-bold text-gray-900">あなたの会社からの規定予算</h2>
+                    <p class="text-sm text-gray-600 mt-1">以下の予算内で、リモートワーク用のデスク環境を構築するパッケージを選択してください。不足品はオプションから追加できます。</p>
+                </div>
+            </div>
+            <div class="bg-white px-6 py-3 rounded-lg border border-blue-100 shadow-sm text-center shrink-0">
+                <div class="text-xs text-gray-500 mb-1">1人あたりの利用可能予算</div>
+                <div class="text-2xl font-bold text-primary">¥50,000<span class="text-sm font-normal text-gray-500">以内</span></div>
+            </div>
+        </div>
+
+        <h3 class="text-xl font-bold text-gray-900 mb-6 border-b pb-2">1. ベースパッケージを選択</h3>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6" id="packages-container">
+            <!-- パッケージカードはJSで生成 -->
+        </div>
+
+    </main>
+
+    <!-- モーダル (商品詳細 & カスタマイズ & 精算) -->
+    <div id="product-modal" class="fixed inset-0 z-50 hidden">
+        <div class="absolute inset-0 bg-gray-900/60 backdrop-blur-sm modal-bg"></div>
+        <div class="absolute inset-x-0 bottom-0 md:inset-auto md:top-1/2 md:left-1/2 md:-translate-x-1/2 md:-translate-y-1/2 w-full md:w-[1000px] max-h-[90vh] bg-white md:rounded-2xl rounded-t-2xl shadow-2xl flex flex-col modal-enter overflow-hidden" id="modal-content">
+            
+            <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50 shrink-0">
+                <h3 class="text-lg font-bold text-gray-800 flex items-center">
+                    <i data-lucide="package" class="h-5 w-5 mr-2 text-primary"></i>
+                    3Dシミュレーター & カスタマイズ
+                </h3>
+                <button class="close-modal-btn text-gray-400 hover:text-gray-700 bg-white rounded-full p-1 shadow-sm">
+                    <i data-lucide="x" class="h-5 w-5"></i>
+                </button>
+            </div>
+
+            <div class="flex flex-col md:flex-row flex-1 overflow-hidden">
+                
+                <!-- 左側：3Dシミュレータ -->
+                <div class="w-full md:w-[60%] bg-gray-50 border-r border-gray-200 flex flex-col relative">
+                    
+                    <!-- 3D表示エリア -->
+                    <div id="virtual-desk-area" class="w-full h-80 md:h-full drop-zone">
+                        <!-- ここにThree.jsのCanvasが挿入されます -->
+                        
+                        <div class="canvas-overlay top-4 left-4 right-4 flex justify-between items-start">
+                            <div class="bg-white/90 backdrop-blur-sm p-3 rounded-lg shadow-sm border border-gray-200 pointer-events-auto">
+                                <h4 class="text-lg font-bold text-gray-900 leading-tight" id="modal-pkg-name">Package Name</h4>
+                                <p class="text-xs text-gray-500 mt-1" id="modal-pkg-desc">Description</p>
+                            </div>
+                            <span class="text-[10px] bg-blue-100 text-blue-700 px-2 py-1 rounded-full font-bold shadow-sm pointer-events-auto">3D/Drag&Drop対応</span>
+                        </div>
+                        
+                        <div class="canvas-overlay bottom-4 left-0 w-full flex justify-center">
+                            <div class="bg-black/60 text-white text-xs px-4 py-2 rounded-full backdrop-blur-md">
+                                <i data-lucide="mouse" class="h-3 w-3 inline mr-1"></i>ドラッグでカメラ回転 / スクロールでズーム
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- コントロールボタン -->
+                    <div class="absolute bottom-4 right-4 flex flex-col gap-2 pointer-events-none">
+                         <button id="reset-camera-btn" class="bg-white p-2 rounded-full shadow-md text-gray-600 hover:text-primary pointer-events-auto transition" title="カメラリセット">
+                            <i data-lucide="video" class="h-5 w-5"></i>
+                        </button>
+                        <button id="clear-desk-btn" class="bg-white p-2 rounded-full shadow-md text-gray-600 hover:text-red-500 pointer-events-auto transition" title="アイテムクリア">
+                            <i data-lucide="trash-2" class="h-5 w-5"></i>
+                        </button>
+                    </div>
+
+                </div>
+
+                <!-- 右側：オプション選択と精算 -->
+                <div class="w-full md:w-[40%] flex flex-col bg-white">
+                    <div class="p-6 flex-1 flex flex-col h-full overflow-hidden">
+                        <div class="mb-4 shrink-0">
+                            <h4 class="text-sm font-bold text-gray-700 mb-1">追加オプション</h4>
+                            <p class="text-[11px] text-gray-500 leading-tight">アイテムを左の3D空間へドラッグ＆ドロップしてください。</p>
+                        </div>
+
+                        <div class="flex-1 overflow-y-auto pr-2 space-y-3 pb-4" id="options-list">
+                            <!-- JSで生成 -->
+                        </div>
+
+                        <div class="shrink-0 pt-4 border-t border-gray-100 mt-auto">
+                            <div class="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                                <h4 class="text-sm font-bold text-gray-800 mb-3 flex items-center">
+                                    <i data-lucide="receipt" class="h-4 w-4 mr-1 text-gray-500"></i>
+                                    精算明細
+                                </h4>
+                                
+                                <div class="space-y-2 text-sm">
+                                    <div class="flex justify-between text-gray-600">
+                                        <span>パッケージ基本料金</span>
+                                        <span id="calc-base-price">¥0</span>
+                                    </div>
+                                    <div class="flex justify-between text-gray-600">
+                                        <span>追加オプション</span>
+                                        <span id="calc-options-price">+ ¥0</span>
+                                    </div>
+                                    <div class="border-t border-gray-200 my-2 pt-2 flex justify-between font-bold text-gray-900 text-base">
+                                        <span>総合計金額</span>
+                                        <span id="calc-total-price">¥0</span>
+                                    </div>
+                                    
+                                    <div class="mt-3 bg-white p-2 rounded-lg border flex justify-between items-center">
+                                        <span class="text-[10px] text-gray-500">予算: ¥50,000</span>
+                                        <div class="text-right flex items-center">
+                                            <span class="text-[10px] text-gray-500 mr-1">残高:</span>
+                                            <span id="calc-remaining" class="font-bold text-green-600 text-sm">¥0</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <button id="add-to-cart-btn" class="w-full mt-4 bg-primary hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg flex justify-center items-center transition shadow-md shadow-blue-200 text-sm">
+                                    <i data-lucide="shopping-bag" class="h-4 w-4 mr-2"></i>
+                                    カートに入れる
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast">商品をカートに追加しました！</div>
+
+    <script>
+        const COMPANY_BUDGET = 50000;
+
+        const packages = [
+            { 
+                id: 'pkg-a', 
+                name: 'Standard Set', 
+                desc: '基本となるデスクとチェアのセット。', 
+                basePrice: 15000, 
+                imageUrl: 'https://images.unsplash.com/photo-1524758631624-e2822e304c36?auto=format&fit=crop&q=80&w=300', 
+                baseItems: [{name:'シンプルワークデスク (W100cm)'}, {name:'スタンダードオフィスチェア'}],
+                // 3Dベースモデル用のパラメータ (デスクのサイズなど)
+                deskParams: { w: 10, h: 7, d: 5, color: 0xddcbaa } 
+            },
+            { 
+                id: 'pkg-b', 
+                name: 'Ergo Comfort', 
+                desc: '疲れにくいエルゴノミクスセット。', 
+                basePrice: 28000, 
+                imageUrl: 'https://images.unsplash.com/photo-1595515106969-1ce29566ff1c?auto=format&fit=crop&q=80&w=300', 
+                baseItems: [{name:'手動昇降スタンディングデスク'}, {name:'ランバーサポート付エルゴチェア'}],
+                deskParams: { w: 12, h: 7.5, d: 6, color: 0xeaeaea }
+            },
+            { 
+                id: 'pkg-c', 
+                name: 'Complete Pro', 
+                desc: '広々とした完璧なセット。', 
+                basePrice: 42000, 
+                imageUrl: 'https://images.unsplash.com/photo-1588693959663-71ab5237de61?auto=format&fit=crop&q=80&w=300', 
+                baseItems: [{name:'L字型ワイドデスク (W140cm)'}, {name:'プレミアムヘッドレスト付チェア'}],
+                deskParams: { w: 14, h: 7, d: 7, color: 0x4a4a4a }
+            }
+        ];
+
+        // 3D用のパラメータを追加
+        const availableOptions = [
+            { id: 'opt-mon27', name: '27インチ 4Kモニター', desc: '高精細で広い作業領域', price: 35000, imageUrl: 'https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?auto=format&fit=crop&q=80&w=150', model: 'monitor', size: [4, 2.5, 0.2], color: 0x222222 },
+            { id: 'opt-mon24', name: '24インチ FHDモニター', desc: '標準的なサブモニター', price: 15000, imageUrl: 'https://images.unsplash.com/photo-1586210579191-33b45e38fa2c?auto=format&fit=crop&q=80&w=150', model: 'monitor', size: [3.2, 2, 0.2], color: 0x333333 },
+            { id: 'opt-kb', name: 'ワイヤレスキーボード＆マウス', desc: 'デスク周りをスッキリ', price: 8000, imageUrl: 'https://images.unsplash.com/photo-1595225476474-87563907a212?auto=format&fit=crop&q=80&w=150', model: 'keyboard', size: [3, 0.1, 1], color: 0xe0e0e0 },
+            { id: 'opt-cam', name: '高画質WEBカメラ', desc: 'オンライン会議の品質向上', price: 6500, imageUrl: 'https://images.unsplash.com/photo-1591012952402-990a44f494f6?auto=format&fit=crop&q=80&w=150', model: 'box', size: [0.5, 0.5, 0.3], color: 0x111111 },
+            { id: 'opt-head', name: 'NCヘッドセット', desc: '生活音を遮断し集中力UP', price: 12000, imageUrl: 'https://images.unsplash.com/photo-1618366712010-f4ae9c647dcb?auto=format&fit=crop&q=80&w=150', model: 'headset', size: [1, 1.5, 0.8], color: 0x888888 },
+            { id: 'opt-light', name: 'モニターライト', desc: '手元を明るく照らす', price: 9000, imageUrl: 'https://images.unsplash.com/photo-1517999161585-fb43a05101a3?auto=format&fit=crop&q=80&w=150', model: 'box', size: [3.5, 0.2, 0.2], color: 0x555555 },
+        ];
+
+        let currentPackageId = null;
+        let placedVirtualItems = []; // { id, optId }
+        let cartItemCount = 0;
+
+        function formatPrice(price) {
+            return new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY' }).format(price);
+        }
+
+        // ==========================================
+        // Three.js セットアップ
+        // ==========================================
+        let scene, camera, renderer;
+        let deskGroup; // デスクやオプションをまとめるグループ
+        let placedMeshes = []; // 配置した3Dメッシュの配列
+        
+        let isDraggingCamera = false;
+        let previousMousePosition = { x: 0, y: 0 };
+        let cameraAngle = { theta: Math.PI / 4, phi: Math.PI / 3, radius: 18 };
+
+        function init3D() {
+            const container = document.getElementById('virtual-desk-area');
+            
+            // シーン
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xf8fafc);
+
+            // カメラ
+            camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
+            updateCameraPosition();
+
+            // レンダラー
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            
+            // 既存のキャンバスがあれば削除
+            $(container).find('canvas').remove();
+            container.appendChild(renderer.domElement);
+
+            // 光源
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
+            dirLight.position.set(10, 15, 10);
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 1024;
+            dirLight.shadow.mapSize.height = 1024;
+            scene.add(dirLight);
+
+            // グリッドヘルパー（床）
+            const gridHelper = new THREE.GridHelper(30, 30, 0xe2e8f0, 0xe2e8f0);
+            gridHelper.position.y = 0;
+            scene.add(gridHelper);
+
+            // メイングループ
+            deskGroup = new THREE.Group();
+            scene.add(deskGroup);
+
+            // カメラ操作イベント（簡易的なオービットコントロール）
+            $(renderer.domElement).on('mousedown touchstart', function(e) {
+                isDraggingCamera = true;
+                const evt = e.type === 'touchstart' ? e.originalEvent.touches[0] : e;
+                previousMousePosition = { x: evt.clientX, y: evt.clientY };
+            });
+
+            $(document).on('mousemove touchmove', function(e) {
+                if (!isDraggingCamera) return;
+                const evt = e.type === 'touchmove' ? e.originalEvent.touches[0] : e;
+                
+                const deltaMove = {
+                    x: evt.clientX - previousMousePosition.x,
+                    y: evt.clientY - previousMousePosition.y
+                };
+
+                cameraAngle.theta -= deltaMove.x * 0.01;
+                cameraAngle.phi -= deltaMove.y * 0.01;
+                
+                // 角度制限
+                cameraAngle.phi = Math.max(0.1, Math.min(Math.PI / 2 - 0.1, cameraAngle.phi));
+
+                updateCameraPosition();
+
+                previousMousePosition = { x: evt.clientX, y: evt.clientY };
+            });
+
+            $(document).on('mouseup touchend', function() {
+                isDraggingCamera = false;
+            });
+
+            // ズーム
+            $(renderer.domElement).on('wheel', function(e) {
+                e.preventDefault();
+                cameraAngle.radius += e.originalEvent.deltaY * 0.01;
+                cameraAngle.radius = Math.max(5, Math.min(40, cameraAngle.radius));
+                updateCameraPosition();
+            });
+            
+            // リサイズ対応
+            window.addEventListener('resize', onWindowResize, false);
+            
+            // アニメーションループ開始
+            animate3D();
+        }
+
+        function updateCameraPosition() {
+            camera.position.x = cameraAngle.radius * Math.sin(cameraAngle.phi) * Math.sin(cameraAngle.theta);
+            camera.position.y = cameraAngle.radius * Math.cos(cameraAngle.phi);
+            camera.position.z = cameraAngle.radius * Math.sin(cameraAngle.phi) * Math.cos(cameraAngle.theta);
+            camera.lookAt(0, 3.5, 0); // デスクの中心あたりを見る
+        }
+
+        function onWindowResize() {
+            const container = document.getElementById('virtual-desk-area');
+            if(!container || !camera || !renderer) return;
+            
+            // コンテナが非表示(display:none)の場合は幅・高さが0になるためスキップ
+            if(container.clientWidth === 0) return;
+            
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        }
+
+        function animate3D() {
+            requestAnimationFrame(animate3D);
+            if(renderer && scene && camera) {
+                renderer.render(scene, camera);
+            }
+        }
+
+        // デスクの生成
+        function buildBaseDesk(pkg) {
+            // 既存のメッシュをクリア
+            while(deskGroup.children.length > 0){ 
+                deskGroup.remove(deskGroup.children[0]); 
+            }
+            placedMeshes = [];
+
+            const p = pkg.deskParams;
+            
+            // 天板
+            const topGeo = new THREE.BoxGeometry(p.w, 0.2, p.d);
+            const topMat = new THREE.MeshStandardMaterial({ color: p.color, roughness: 0.6 });
+            const deskTop = new THREE.Mesh(topGeo, topMat);
+            deskTop.position.y = p.h;
+            deskTop.castShadow = true;
+            deskTop.receiveShadow = true;
+            deskGroup.add(deskTop);
+
+            // 脚 (簡易的に4本)
+            const legGeo = new THREE.BoxGeometry(0.3, p.h, 0.3);
+            const legMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+            const positions = [
+                [-p.w/2 + 0.5, p.h/2, -p.d/2 + 0.5],
+                [p.w/2 - 0.5, p.h/2, -p.d/2 + 0.5],
+                [-p.w/2 + 0.5, p.h/2, p.d/2 - 0.5],
+                [p.w/2 - 0.5, p.h/2, p.d/2 - 0.5]
+            ];
+            
+            positions.forEach(pos => {
+                const leg = new THREE.Mesh(legGeo, legMat);
+                leg.position.set(pos[0], pos[1], pos[2]);
+                leg.castShadow = true;
+                deskGroup.add(leg);
+            });
+            
+            // チェア (簡易表現)
+            const chairGeo = new THREE.CylinderGeometry(1, 1, 0.5, 16);
+            const chairMat = new THREE.MeshStandardMaterial({ color: 0x334155 });
+            const chair = new THREE.Mesh(chairGeo, chairMat);
+            chair.position.set(0, p.h - 3, p.d/2 + 1.5);
+            chair.castShadow = true;
+            deskGroup.add(chair);
+        }
+
+        // オプションアイテムの生成
+        function createItemMesh(opt) {
+            const group = new THREE.Group();
+            
+            let geometry, material, mesh;
+            
+            // モデルタイプによって形状を変える
+            if(opt.model === 'monitor') {
+                // モニター画面
+                geometry = new THREE.BoxGeometry(opt.size[0], opt.size[1], opt.size[2]);
+                material = new THREE.MeshStandardMaterial({ color: opt.color });
+                mesh = new THREE.Mesh(geometry, material);
+                mesh.position.y = opt.size[1]/2 + 0.5; // スタンド分浮かす
+                
+                // スタンド
+                const standGeo = new THREE.CylinderGeometry(0.1, 0.3, 0.5);
+                const standMat = new THREE.MeshStandardMaterial({ color: 0x555555 });
+                const stand = new THREE.Mesh(standGeo, standMat);
+                stand.position.y = 0.25;
+                
+                const baseGeo = new THREE.BoxGeometry(1.5, 0.1, 1);
+                const base = new THREE.Mesh(baseGeo, standMat);
+                base.position.y = 0.05;
+                
+                group.add(mesh, stand, base);
+                
+            } else if (opt.model === 'keyboard') {
+                geometry = new THREE.BoxGeometry(opt.size[0], opt.size[1], opt.size[2]);
+                material = new THREE.MeshStandardMaterial({ color: opt.color });
+                mesh = new THREE.Mesh(geometry, material);
+                mesh.position.y = opt.size[1]/2;
+                group.add(mesh);
+            } else {
+                // デフォルトは単なる箱
+                geometry = new THREE.BoxGeometry(opt.size[0], opt.size[1], opt.size[2]);
+                material = new THREE.MeshStandardMaterial({ color: opt.color });
+                mesh = new THREE.Mesh(geometry, material);
+                mesh.position.y = opt.size[1]/2;
+                group.add(mesh);
+            }
+
+            // 影の設定
+            group.traverse(function(child) {
+                if (child.isMesh) {
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                }
+            });
+
+            return group;
+        }
+
+
+        // ==========================================
+        // jQuery メイン処理
+        // ==========================================
+        $(document).ready(function() {
+
+            function init() {
+                const html = packages.map(pkg => `
+                    <div class="package-card bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col hover:shadow-md transition relative overflow-hidden cursor-pointer group" data-pkg-id="${pkg.id}">
+                        ${pkg.basePrice > COMPANY_BUDGET ? '<div class="absolute top-0 right-0 bg-red-500 text-white text-[10px] font-bold px-2 py-1 rounded-bl-lg z-10">予算オーバー</div>' : ''}
+                        
+                        <div class="h-40 w-full overflow-hidden bg-gray-100 relative">
+                            <img src="${pkg.imageUrl}" alt="${pkg.name}" class="real-image group-hover:scale-105 transition-transform duration-500">
+                            <div class="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent"></div>
+                            <h4 class="absolute bottom-3 left-4 text-xl font-bold text-white mb-1 drop-shadow-md">${pkg.name}</h4>
+                        </div>
+                        
+                        <div class="p-6 flex flex-col flex-1">
+                            <p class="text-sm text-gray-500 mb-4 flex-1">${pkg.desc}</p>
+                            <div class="mt-auto">
+                                <div class="text-xs text-gray-400 mb-1">基本価格</div>
+                                <div class="text-2xl font-bold text-gray-900 mb-4">${formatPrice(pkg.basePrice)}</div>
+                                <button class="w-full border-2 border-primary text-primary hover:bg-primary hover:text-white font-bold py-2 px-4 rounded-lg transition pointer-events-none">
+                                    3Dでカスタマイズ
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+                
+                $('#packages-container').html(html);
+                lucide.createIcons();
+            }
+
+            function openModal(pkgId) {
+                const pkg = packages.find(p => p.id === pkgId);
+                if (!pkg) return;
+
+                currentPackageId = pkg.id;
+                placedVirtualItems = [];
+
+                $('#modal-pkg-name').text(pkg.name);
+                $('#modal-pkg-desc').text(pkg.desc);
+
+                renderOptionsList();
+                updatePricing();
+
+                $('#product-modal').removeClass('hidden');
+                
+                // モーダル表示後に3Dを初期化/リサイズする必要がある
+                setTimeout(() => {
+                    $('#modal-content').addClass('modal-enter-active');
+                    if(!scene) {
+                        init3D();
+                    } else {
+                        onWindowResize(); // 既存のキャンバスサイズを合わせる
+                    }
+                    buildBaseDesk(pkg);
+                }, 50);
+                
+                lucide.createIcons();
+            }
+
+            function closeModal() {
+                $('#modal-content').removeClass('modal-enter-active');
+                setTimeout(() => {
+                    $('#product-modal').addClass('hidden');
+                }, 300);
+            }
+
+            function renderOptionsList() {
+                const html = availableOptions.map(opt => {
+                    const count = placedVirtualItems.filter(item => item.optId === opt.id).length;
+                    const isSelected = count > 0;
+                    const classes = isSelected ? 'border-primary ring-1 ring-primary shadow-sm bg-blue-50/30' : 'border-gray-200 hover:border-gray-300 bg-white';
+                    
+                    return `
+                        <div class="flex items-center p-2 border rounded-xl draggable-item ${classes}" 
+                             draggable="true" data-opt-id="${opt.id}">
+                            <div class="mr-2 text-gray-400 cursor-grab">
+                                <i data-lucide="grip-vertical" class="h-4 w-4"></i>
+                            </div>
+                            <div class="w-12 h-12 rounded-lg mr-3 overflow-hidden border border-gray-200 shrink-0">
+                                <img src="${opt.imageUrl}" class="real-image object-cover pointer-events-none">
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <div class="font-bold text-gray-900 text-xs truncate">${opt.name}</div>
+                                <div class="font-bold text-gray-600 text-xs mt-0.5">+${formatPrice(opt.price)}</div>
+                            </div>
+                            <div class="text-right ml-1 flex flex-col items-end shrink-0">
+                                ${isSelected ? 
+                                    `<span class="text-[9px] text-white bg-primary px-1.5 py-0.5 rounded font-bold">${count}個</span>` : 
+                                    `<span class="text-[9px] text-gray-400 border border-gray-200 px-1.5 py-0.5 rounded">Drag</span>`
+                                }
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+                
+                $('#options-list').html(html);
+                lucide.createIcons();
+            }
+
+            function updatePricing() {
+                const pkg = packages.find(p => p.id === currentPackageId);
+                if (!pkg) return;
+
+                let optionsTotal = 0;
+                placedVirtualItems.forEach(item => {
+                    const opt = availableOptions.find(o => o.id === item.optId);
+                    if (opt) optionsTotal += opt.price;
+                });
+
+                const grandTotal = pkg.basePrice + optionsTotal;
+                const remaining = COMPANY_BUDGET - grandTotal;
+
+                $('#calc-base-price').text(formatPrice(pkg.basePrice));
+                $('#calc-options-price').text(`+ ${formatPrice(optionsTotal)}`);
+                $('#calc-total-price').text(formatPrice(grandTotal));
+                
+                const $remainingEl = $('#calc-remaining');
+                $remainingEl.text(formatPrice(remaining));
+                
+                const $btn = $('#add-to-cart-btn');
+
+                if (remaining < 0) {
+                    $remainingEl.removeClass('text-green-600').addClass('text-red-600');
+                    $btn.prop('disabled', true).addClass('opacity-50 cursor-not-allowed');
+                    $btn.html(`<i data-lucide="alert-triangle" class="h-4 w-4 mr-2"></i>予算オーバー`);
+                } else {
+                    $remainingEl.removeClass('text-red-600').addClass('text-green-600');
+                    $btn.prop('disabled', false).removeClass('opacity-50 cursor-not-allowed');
+                    $btn.html(`<i data-lucide="shopping-bag" class="h-4 w-4 mr-2"></i>カートに入れる`);
+                }
+            }
+
+            // 3D空間へのアイテム追加
+            function addVirtualItem(optId) {
+                const opt = availableOptions.find(o => o.id === optId);
+                if(!opt) return;
+
+                const pkg = packages.find(p => p.id === currentPackageId);
+                
+                const itemId = 'v-item-' + Date.now();
+                placedVirtualItems.push({ id: itemId, optId: optId });
+                
+                // メッシュ生成と配置
+                const mesh = createItemMesh(opt);
+                
+                // 机の高さに合わせる
+                mesh.position.y = pkg.deskParams.h + 0.1; 
+                
+                // 重ならないように適当に散らす
+                const offset = placedMeshes.length * 1.5;
+                mesh.position.x = (Math.random() - 0.5) * (pkg.deskParams.w - 2);
+                mesh.position.z = (Math.random() - 0.5) * (pkg.deskParams.d - 2);
+
+                deskGroup.add(mesh);
+                placedMeshes.push(mesh); // 管理用配列に追加
+                
+                renderOptionsList();
+                updatePricing();
+            }
+
+            function clearDesk() {
+                placedVirtualItems = [];
+                // 追加したメッシュ（deskGroup内のベース以外の要素）を削除
+                placedMeshes.forEach(mesh => deskGroup.remove(mesh));
+                placedMeshes = [];
+                
+                renderOptionsList();
+                updatePricing();
+            }
+
+
+            // --- イベント ---
+
+            $(document).on('click', '.package-card', function() {
+                openModal($(this).data('pkg-id'));
+            });
+
+            $(document).on('click', '.close-modal-btn, .modal-bg', function() {
+                closeModal();
+            });
+
+            $('#clear-desk-btn').on('click', clearDesk);
+
+            $('#reset-camera-btn').on('click', function() {
+                cameraAngle = { theta: Math.PI / 4, phi: Math.PI / 3, radius: 18 };
+                updateCameraPosition();
+            });
+
+            $('#add-to-cart-btn').on('click', function() {
+                cartItemCount++;
+                $('#cart-badge').text(cartItemCount).removeClass('hidden');
+                closeModal();
+                
+                const $toast = $('#toast');
+                $toast.fadeIn(300).delay(2500).fadeOut(300);
+            });
+
+            // ドラッグ＆ドロップ処理
+            $(document).on('dragstart', '.draggable-item', function(e) {
+                e.originalEvent.dataTransfer.setData("text/plain", $(this).data('opt-id'));
+                $(this).addClass('opacity-50');
+            });
+
+            $(document).on('dragend', '.draggable-item', function(e) {
+                $(this).removeClass('opacity-50');
+            });
+
+            $('#virtual-desk-area')
+                .on('dragover', function(e) {
+                    e.preventDefault(); 
+                    $(this).css('box-shadow', 'inset 0 0 0 4px #3b82f6');
+                })
+                .on('dragleave', function(e) {
+                    $(this).css('box-shadow', 'none');
+                })
+                .on('drop', function(e) {
+                    e.preventDefault();
+                    $(this).css('box-shadow', 'none');
+
+                    const optId = e.originalEvent.dataTransfer.getData("text/plain");
+                    if (!optId) return;
+
+                    $('.draggable-item').removeClass('opacity-50');
+                    addVirtualItem(optId);
+                });
+
+            init();
+        });
+    </script>
+</body>
+</html>
